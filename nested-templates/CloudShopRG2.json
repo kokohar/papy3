@@ -1,0 +1,376 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmstorageType": {
+      "type": "string",
+      "defaultValue": "Premium_LRS",
+      "allowedValues": [
+        "Premium_LRS"
+      ]
+    },
+    "domainName": {
+      "type": "string",
+      "defaultValue": "Sogeti.lu",
+      "metadata": {
+        "description": "The FQDN of the Active Directory Domain to be created"
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "demouser",
+      "metadata": {
+        "description": "The name of the administrator account of the new VM"
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "defaultValue": "demo@pass123",
+      "metadata": {
+        "description": "The password for the administrator account of the new VM and domain"
+      }
+    },
+    "CloudShopDownloadUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Zip that contains cloud shop sample"
+      },
+      "defaultValue": "https://cloudworkshop.blob.core.windows.net/sql-hybrid-cloud/CloudShop.zip"
+    },
+    "CloudShopDBDownloadUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Zip that contains Adventure works DB sample"
+      },
+      "defaultValue": "https://cloudworkshop.blob.core.windows.net/sql-hybrid-cloud/AdventureWorks.bak"         
+    },
+    "CloudShopDBInstallscriptUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "script to execute"
+      },
+      "defaultValue": "https://raw.githubusercontent.com/kokohar/papy3/master/script-extensions/deploy-cloudshop-db2.ps1"
+    },
+    "SQLConfigscriptUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "script to execute"
+      },
+      "defaultValue": "https://raw.githubusercontent.com/kokohar/papy3/master/script-extensions/configure-sql2.ps1"
+    },
+    "SQLVMName": {
+      "type": "string",
+      "defaultValue": "CloudShopSQL2",
+      "minLength": 1
+    },
+    "SQL3VMName": {
+      "type": "string",
+      "defaultValue": "CloudShopSQL3",
+      "minLength": 1
+    }
+
+  },
+  "variables": {
+    "VNETSubnet2Name": "Data",
+    "VNETNAME": "VNET2",
+    "VnetID": "[resourceId('Microsoft.Network/virtualNetworks', variables('VNETNAME'))]",
+    "CloudShopDBInstallScriptFileName": "deploy-cloudshop-db2.ps1",
+    "CloudShopDBInstallScriptParameters": "[concat(' -domain ', parameters('domainName'), ' -user ', parameters('adminUsername'), ' -password ', parameters('adminPassword'), ' -dbsource ', parameters('CloudShopDBDownloadUrl'), ' -sqlConfigUrl ', parameters('SQLConfigscriptUrl'))]",
+    "vmstorageName": "[concat('chqdisks', uniqueString(resourceGroup().id))]",
+    "SQLSKU": "SQLDEV",
+    "SQLImagePublisher": "MicrosoftSQLServer",
+    "SQLImageOffer": "SQL2017-WS2016",
+    "SQLOSDiskName": "SQLOSDisk2",
+    "SQLVmSize": "Standard_D2s_v3",
+    "SQLSubnetRef": "[concat(variables('VnetID'), '/subnets/', variables('VNETSubnet2Name'))]",
+    "SQLStorageAccountContainerName": "vhds",
+    "SQLNicName": "[concat(parameters('SQLVMName'), 'NetworkInterface')]",
+    "scriptFolder": ".",
+    "sqlipName": "sqlip",
+    "sqlip4Name": "sql4ip",
+    "SQL3SKU": "SQLDEV",
+    "SQL3ImagePublisher": "MicrosoftSQLServer",
+    "SQL3ImageOffer": "SQL2017-WS2016",
+    "sql3ipName": "sql3ip",
+    "SQL3OSDiskName": "SQLOSDisk2",
+    "SQL3VmSize": "Standard_D2s_v3",
+    "SQL3SubnetRef": "[concat(variables('VnetID'), '/subnets/', variables('VNETSubnet2Name'))]",
+    "SQL3NicName": "[concat(parameters('SQL3VMName'), 'NetworkInterface')]",
+    "availabilitySetName": "sqlavset2"
+  },
+  "resources": [
+    {
+      "name": "[variables('vmstorageName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2017-06-01",
+      "sku": {
+        "name": "[parameters('vmstorageType')]"
+      },
+      "tags": {
+        "displayName": "CloudShopStorage"
+      },
+      "dependsOn": [],
+      "kind": "Storage"
+    },
+    {
+      "name": "[variables('availabilitySetName')]",
+      "type": "Microsoft.Compute/availabilitySets",
+      "apiVersion": "2016-04-30-preview",
+      "location": "[resourceGroup().location]",
+      "properties": {
+          "platformFaultDomainCount": 2,
+          "platformUpdateDomainCount": 5
+      },
+      "sku": {
+          "name": "Aligned"
+      }
+    },
+    {
+      "name": "[variables('SQLNicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('SQLipName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('SQLip4Name'))]"
+      ],
+      "tags": {
+        "displayName": "SQL2Nic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('SQLSubnetRef')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('sqlipName'))]",
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('sqlip4Name'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[variables('SQL3NicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('SQL3ipName'))]"
+      ],
+      "tags": {
+        "displayName": "SQL3Nic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig3",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('SQL3SubnetRef')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('sql3ipName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('SQLVMName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2018-06-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('vmstorageName'))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('SQLNicName'))]",
+        "[concat('Microsoft.Compute/availabilitySets/', variables('availabilitySetName'))]"
+      ],
+      "tags": {
+        "displayName": "ContosoSQL2"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('SQLVmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('SQLVMName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('SQLImagePublisher')]",
+            "offer": "[variables('SQLImageOffer')]",
+            "sku": "[variables('SQLSKU')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "fromImage",
+            "managedDisk": {
+                "storageAccountType": "Premium_LRS"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('SQLNicName'))]"
+            }
+          ]
+        },
+        "availabilitySet": {
+            "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('availabilitySetName'))]"
+        }
+      },
+      "resources": [
+        {
+          "name": "InstallCloudShopDB",
+          "type": "extensions",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2016-03-30",
+          "dependsOn": [
+            "[resourceId('Microsoft.Compute/virtualMachines', parameters('SQLVMName'))]"
+          ],
+          "tags": {
+            "displayName": "InstallCloudShopDB"
+          },
+          "properties": {
+            "publisher": "Microsoft.Compute",
+            "type": "CustomScriptExtension",
+            "typeHandlerVersion": "1.4",
+            "autoUpgradeMinorVersion": false,
+            "settings": {
+              "fileUris": [
+                "[concat(parameters('CloudShopDBInstallscriptUrl'))]"
+              ],
+              "commandToExecute": "[concat('powershell -ExecutionPolicy Unrestricted -File ', variables('scriptFolder'), '/', variables('CloudShopDBInstallScriptFileName'), ' ', variables('CloudShopDBInstallScriptParameters'))]"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "[parameters('SQL3VMName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2018-06-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('vmstorageName'))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('SQL3NicName'))]",
+        "[concat('Microsoft.Compute/availabilitySets/', variables('availabilitySetName'))]"
+      ],
+      "tags": {
+        "displayName": "ContosoSQL3"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('SQL3VmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('SQL3VMName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('SQL3ImagePublisher')]",
+            "offer": "[variables('SQL3ImageOffer')]",
+            "sku": "[variables('SQL3SKU')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "fromImage",
+            "managedDisk": {
+                "storageAccountType": "Premium_LRS"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('SQL3NicName'))]"
+            }
+          ]
+        },
+        "availabilitySet": {
+            "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('availabilitySetName'))]"
+        }
+      },
+      "resources": [
+        {
+          "name": "InstallCloudShopDB3",
+          "type": "extensions",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2016-03-30",
+          "dependsOn": [
+            "[resourceId('Microsoft.Compute/virtualMachines', parameters('SQL3VMName'))]"
+          ],
+          "tags": {
+            "displayName": "InstallCloudShopDB3"
+          },
+          "properties": {
+            "publisher": "Microsoft.Compute",
+            "type": "CustomScriptExtension",
+            "typeHandlerVersion": "1.4",
+            "autoUpgradeMinorVersion": false,
+            "settings": {
+              "fileUris": [
+                "[concat(parameters('CloudShopDBInstallscriptUrl'))]"
+              ],
+              "commandToExecute": "[concat('powershell -ExecutionPolicy Unrestricted -File ', variables('scriptFolder'), '/', variables('CloudShopDBInstallScriptFileName'), ' ', variables('CloudShopDBInstallScriptParameters'))]"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "[variables('sqlipName')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "sqlip"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    },
+    {
+      "name": "[variables('sqlip4Name')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "sqlip4"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    },
+    {
+      "name": "[variables('sql3ipName')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "sql3ip"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    }
+  ],
+  "outputs": {}
+}

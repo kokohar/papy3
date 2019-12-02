@@ -1,0 +1,231 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "ADVMName": {
+      "type": "string",
+      "defaultValue": "ADVM2",
+      "minLength": 1
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "demouser",
+      "metadata": {
+        "description": "The name of the administrator account of the new VM and domain"
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "defaultValue": "demo@pass123",
+      "metadata": {
+        "description": "The password for the administrator account of the new VM and domain"
+      }
+    },
+    "domainName": {
+      "type": "string",
+      "defaultValue": "Sogeti.lu",
+      "metadata": {
+        "description": "The FQDN of the Active Directory Domain to be created"
+      }
+    },
+    "_artifactsLocation": {
+      "type": "string",
+      "metadata": {
+          "description": "The location of resources, such as templates and DSC modules, that the template depends on"
+      },
+      "defaultValue": "https://raw.githubusercontent.com/kokohar/papy3/master/"
+    },
+    "_artifactsLocationSasToken": {
+      "type": "securestring",
+      "metadata": {
+          "description": "Auto-generated token to access _artifactsLocation"
+      },
+      "defaultValue": ""
+    }
+  },
+  "variables": {
+    "VNETNAME": "VNET2",
+    "DNSIP": "172.16.2.4",
+    "VNETPrefix": "172.16.0.0/16",
+    "VNETSubnet1Name": "Apps",
+    "VNETSubnet1Prefix": "172.16.0.0/24",
+    "VNETSubnet3Name": "Data",
+    "VNETSubnet3Prefix": "172.16.1.0/24",
+    "VNETSubnet2Name": "Identity",
+    "VNETSubnet2Prefix": "172.16.2.0/24",
+    "ADVMOSDiskName": "ADVM2OSDisk",
+    "ADVMDATADiskName": "ADVM2DataDisk",
+    "ADVMVmSize": "Standard_D2s_v3",
+    "ADVMVnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'VNET2')]",
+    "ADVMNicName": "[concat(parameters('ADVMName'), 'NetworkInterface')]",
+    "advmipName": "advm2ip",
+    "labName": "sql-hybrid-cloud"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[variables('ADVMNicName')]",
+      "apiVersion": "2018-08-01",
+      "location": "[resourceGroup().location]",
+      "tags": {
+          "Lab": "[variables('labName')]"
+      },
+      "properties": {
+          "ipConfigurations": [
+              {
+                  "name": "ipconfig1",
+                  "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "[variables('DNSIP')]",
+                      "publicIPAddress": {
+                          "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('advmipName'))]"
+                      },
+                      "subnet": {
+                          "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('VNETNAME'), variables('VNETSubnet2Name'))]"
+                      },
+                      "primary": true,
+                      "privateIPAddressVersion": "IPv4"
+                  }
+              }
+          ],
+          "primary": true
+      },
+      "dependsOn": [
+          "[resourceId('Microsoft.Network/publicIPAddresses', variables('advmipName'))]"
+      ]
+  },
+  {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "sku": {
+          "name": "Basic",
+          "tier": "Regional"
+      },
+      "name": "[variables('advmipName')]",
+      "apiVersion": "2018-08-01",
+      "location": "[resourceGroup().location]",
+      "tags": {
+          "Lab": "[variables('labName')]"
+      },
+      "properties": {
+          "publicIPAddressVersion": "IPv4",
+          "publicIPAllocationMethod": "Dynamic",
+          "idleTimeoutInMinutes": 4,
+          "ipTags": []
+      },
+      "dependsOn": []
+  },
+  {
+    "type": "Microsoft.Compute/disks",
+    "name": "[variables('ADVMDATADiskName')]",
+    "apiVersion": "2017-03-30",
+    "location": "[resourceGroup().location]",
+    "sku": {
+        "name": "Premium_LRS"
+    },
+    "properties": {
+        "creationData": {
+            "createOption": "Empty"
+        },
+        "diskSizeGB": 20
+    }
+},
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[parameters('ADVMName')]",
+      "apiVersion": "2018-06-01",
+      "location": "[resourceGroup().location]",
+      "tags": {
+          "Lab": "[variables('labName')]"
+      },
+      "properties": {
+          "hardwareProfile": {
+              "vmSize": "[variables('ADVMVmSize')]"
+          },
+          "storageProfile": {
+              "imageReference": {
+                  "publisher": "MicrosoftWindowsServer",
+                  "offer": "WindowsServer",
+                  "sku": "2016-Datacenter",
+                  "version": "latest"
+              },
+              "osDisk": {
+                  "osType": "Windows",
+                  "name": "[variables('ADVMOSDiskName')]",
+                  "createOption": "FromImage",
+                  "caching": "ReadWrite",
+                  "managedDisk": {
+                      "storageAccountType": "Premium_LRS"
+                  },
+                  "diskSizeGB": 127
+              },
+              "dataDisks": [
+                  {
+                      "lun": 0,
+                      "name": "[variables('ADVMDATADiskName')]",
+                      "createOption": "Attach",
+                      "caching": "None",
+                      "managedDisk": {
+                          "id": "[resourceId('Microsoft.Compute/disks/', variables('ADVMDATADiskName'))]"
+                      }
+                  }
+              ]
+          },
+          "osProfile": {
+              "computerName": "[parameters('ADVMName')]",
+              "adminUsername": "[parameters('adminUsername')]",
+              "adminPassword": "[parameters('adminPassword')]",
+              "windowsConfiguration": {
+                  "provisionVMAgent": true,
+                  "enableAutomaticUpdates": true
+              },
+              "allowExtensionOperations": true
+          },
+          "networkProfile": {
+              "networkInterfaces": [
+                  {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('ADVMNicName'))]"
+                  }
+              ]
+          }
+      },
+      "dependsOn": [
+          "[resourceId('Microsoft.Network/networkInterfaces', variables('ADVMNicName'))]",
+          "[resourceId('Microsoft.Compute/disks/', variables('ADVMDATADiskName'))]"
+      ],
+      "resources": [
+          {
+              "type": "extensions",
+              "name": "CreateADForest",
+              "apiVersion": "2017-03-30",
+              "location": "[resourceGroup().location]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', parameters('ADVMName'))]"
+              ],
+              "properties": {
+                  "publisher": "Microsoft.Powershell",
+                  "type": "DSC",
+                  "typeHandlerVersion": "2.19",
+                  "autoUpgradeMinorVersion": true,
+                  "settings": {
+                      "ModulesUrl": "[concat(parameters('_artifactsLocation'), '/dsc/CreateADSDC.zip', parameters('_artifactsLocationSasToken'))]",
+                      "ConfigurationFunction": "CreateADSDC.ps1\\CreateADSDC",
+                      "Properties": {
+                          "DomainName": "[parameters('domainName')]",
+                          "AdminCreds": {
+                              "UserName": "[parameters('adminUsername')]",
+                              "Password": "PrivateSettingsRef:AdminPassword"
+                          }
+                      }
+                  },
+                  "protectedSettings": {
+                      "Items": {
+                          "AdminPassword": "[parameters('adminPassword')]"
+                      }
+                  }
+              }
+          }
+      ]
+  }
+  ],
+  "outputs": {}
+}
